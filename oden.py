@@ -175,16 +175,23 @@ def caller(server, tasks, saved, failed, lock):
                     time.sleep(60)
                     res2 = requests.post(uri_server + "retrieve", data=data, timeout=None)
                     if res2.status_code == 200:
-                        with open(filename, "wb") as f:
-                            res2.raw.decode_content = True
-                            rootLogger.info("Saving the result for {0} as {1}".format(task, filename),
+                        res2.raw.decode_content = True
+                        res = pickle.loads(res2.content)
+                        if "result" in res:
+                            with open(filename, "wb") as f:
+                                rootLogger.info("Saving the result for {0} as {1}".format(task, filename),
+                                                {"who": name_server})
+                                f.write(res2.content)
+                        elif "error" in res:
+                            rootLogger.info("Error occurred in the remote machine: {0}".format(res["error"]),
                                             {"who": name_server})
-                            f.write(res2.content)
+                            raise Exception("Error occurred in the remote machine")
+                        else:
+                            raise Exception("Invalid result is given")
+
                     elif res2.status_code == 503:
                         pass  # the remote is working
                     else:
-                        rootLogger.info("The remote machine is in idle.".format(task, filename),
-                                        {"who": name_server})
                         raise Exception("The remote machine is in idle.  The task was gone away...")
                 lock.acquire()
                 saved.append(filename)
