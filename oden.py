@@ -249,6 +249,7 @@ def caller(server, tasks, saved, failed, lock):
 
     lock.release()
     rootLogger.info("Closing".format(), extra={"who": name_server})
+    handle_finish_machine(uri_server, name_server)
 
 
 if __name__ == "__main__":
@@ -299,6 +300,7 @@ if __name__ == "__main__":
                     threading.Thread(target=caller, args=(server, tasks, saved, failed, lock)).start()
                 while True:
                     if len(saved) + len(failed) == num_tasks:
+                        handle_finish_tasks()
                         rootLogger.info("Succeeded {0} tasks.".format(len(saved)), extra={"who": "manager"})
                         rootLogger.info("Failed {0} tasks.".format(len(failed)), extra={"who": "manager"})
                         with open("failed.pickle", "wb") as f:
