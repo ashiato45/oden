@@ -7,51 +7,15 @@ import hashlib
 import time
 import sys
 import logging
+import pathlib
 
-
-# ------ User write below ------
-hosts = """
-999.999.999.999
-"""
-name = "sample"
-
-
-def calc(task):
-    return "The result"
-
-
-def make_tasks():
-    tasks = []
-    return tasks
-
-
-def handle_finish_machine(num, uri):
-    pass
-
-
-def handle_finish_tasks():
-    pass
-
-
-def show_status():
-    return "I'm working well!"
-
-
-# ------ User write above ------
 
 def get_time_hash():
     return datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
-# Prepare Flask
-app = Flask(__name__)
-
-# State of worker.  It can be ("idle",), ("working", task), ("done", task, res) or
-lock_state = threading.Lock()
-state_worker = ("idle",)
-
 
 # Prepare logger
-logFormatter = logging.Formatter("%(asctime)s [%(who)s] [%(levelname)s]  %(message)s")
+logFormatter = logging.Formatter("%(asctime)s [%(levelname)s]  %(message)s")
 rootLogger = logging.getLogger()
 rootLogger.setLevel(logging.INFO)
 
@@ -62,6 +26,71 @@ rootLogger.addHandler(fileHandler)
 consoleHandler = logging.StreamHandler()
 consoleHandler.setFormatter(logFormatter)
 rootLogger.addHandler(consoleHandler)
+
+
+# ------ User write below ------
+# hosts = """
+# 999.999.999.999
+# """
+try:
+    hosts = pathlib.Path("hosts.txt").read_text().split("\n")
+except FileNotFoundError:
+    hosts = ""
+name = "sample"
+interval_polling = 5
+
+
+def make_tasks():
+    import random
+    random.seed(42)
+    tasks = []
+    for i in range(1, 10 + 1):
+        for _ in range(10):
+            tasks.append([random.random() for _ in range(i*10000)])
+    return tasks
+
+
+def calc(task):
+    import time
+    st = time.time()
+    task.sort()
+    t = time.time() - st
+    return t
+
+
+def handle_finish_machine(uri, name):
+    import json
+    requests.post('https://hooks.slack.com/services/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', data=json.dumps({
+        'text': "Works of {1}@{0} are completed!",
+        'username': u'vagrant_test',
+        'icon_emoji': u':ghost:',
+        'link_names': 1,
+    }))
+
+
+def handle_finish_tasks():
+    import json
+    requests.post('https://hooks.slack.com/services/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', data=json.dumps({
+        'text': "All works completed!",
+        'username': u'vagrant_test',
+        'icon_emoji': u':ghost:',
+        'link_names': 1,
+    }))
+
+
+def show_status():
+    return "I'm working well!"
+
+
+# ------ User write above ------
+
+
+# Prepare Flask
+app = Flask(__name__)
+
+# State of worker.  It can be ("idle",), ("working", task), ("done", task, res) or
+lock_state = threading.Lock()
+state_worker = ("idle",)
 
 
 # Make pages
@@ -172,7 +201,7 @@ def caller(server, tasks, saved, failed, lock):
             if res.status_code == 200:
                 rootLogger.info("Request {0} is accepted".format(task), {"who": name_server})
                 while True:
-                    time.sleep(60)
+                    time.sleep(interval_polling)
                     res2 = requests.post(uri_server + "retrieve", data=data, timeout=None)
                     if res2.status_code == 200:
                         res2.raw.decode_content = True
@@ -205,7 +234,8 @@ def caller(server, tasks, saved, failed, lock):
             import traceback, io
             with io.StringIO() as f:
                 traceback.print_exc(file=f)
-                rootLogger.error("Request {0} failed with the following error: {1}".format(task, f.getvalue()))
+                rootLogger.error("Request {0} failed with the following error: {1}".format(task, f.getvalue()),
+                                 {"who": name_server})
 
     lock.release()
     rootLogger.info("Closing".format(), {"who": name_server})
