@@ -84,6 +84,9 @@ def show_status():
 
 # ------ User write above ------
 
+def get_hash(o):
+    return hashlib.md5(pickle.dumps(o)).hexdigest()
+
 
 # Prepare Flask
 app = Flask(__name__)
@@ -143,7 +146,7 @@ def respond_retrieve():
     response = make_response()
     app.logger.info("Got retrieval request".format())
     task_request = pickle.loads(request.data)
-    task_request_hash = hashlib.md5(pickle.dumps(task_request)).hexdigest()
+    task_request_hash = get_hash(task_request)
     if state_worker[0] == "idle":
         app.logger.error("The state was idle".format())
         abort(404, {}) #404
@@ -154,7 +157,7 @@ def respond_retrieve():
         app.logger.info("The state was done".format())
         lock_state.acquire()
         _, task, res = state_worker
-        task_hash = hashlib.md5(pickle.dumps(task)).hexdigest()
+        task_hash = get_hash(task)
         if task_hash != task_request_hash:
             app.logger.error("The task we have done and the task of the request are different".format(),
                              extra={"who": "retrieve"})
@@ -164,7 +167,7 @@ def respond_retrieve():
                              extra={"who": "retrieve"})
             lock_state.release()
             abort(404, {})
-        res = pickle.dumps({"task": task, "result": res})
+        res = pickle.dumps({"task": task, "result": pickle.dumps(res)})
         response.data = res
         response.mimetype = "application/octet-stream"
         state_worker = ("idle",)
@@ -185,7 +188,7 @@ def respond_retrieve():
     abort(500, {}) # Internal server error
 
 
-def caller(server, tasks, saved, failed, lock):
+def caller(server, tasks, lock, total):
     time_start = time.time()
     uri_server = server[0]
     name_server = server[1]
@@ -215,9 +218,6 @@ def caller(server, tasks, saved, failed, lock):
                                 rootLogger.info("Saving the result as {0}".format(filename),
                                                 extra={"who": name_server})
                                 f.write(res2.content)
-                            lock.acquire()
-                            saved.append(filename)
-                            lock.release()
                             break
                         elif "error" in res:
                             rootLogger.info("Error occurred in the remote machine: {0}".format(res["error"]),
@@ -233,21 +233,15 @@ def caller(server, tasks, saved, failed, lock):
                     else:
                         raise Exception("Got unexpected error code {0}".format(res2.status_code))
                 time_elapsed = time.time() - time_start
-                if len(saved) == 0:
+                if total - len(tasks) == 0:
                     eta = 0
                 else:
-                    eta = time_elapsed * len(tasks) / (len(saved))
+                    eta = time_elapsed * len(tasks) / (total - len(tasks))
                 rootLogger.info("{0} tasks are remaining.  ETA is {1}".format(len(tasks), eta),
                                 extra={"who": name_server})
             else:
-                lock.acquire()
-                failed.append(task)
                 rootLogger.info("Retrieving failed with {1}".format(res.status_code), extra={"who": name_server})
-                lock.release()
         except Exception as e:
-            lock.acquire()
-            failed.append(task)
-            lock.release()
             import traceback, io
             with io.StringIO() as f:
                 traceback.print_exc(file=f)
@@ -287,19 +281,26 @@ if __name__ == "__main__":
     # print(sys.argv[1])
 
     if sys.argv[1] in ["manager", "test", "resume"]:
+        tasks = make_tasks()
         if sys.argv[1] == "resume":
             rootLogger.info("Starting resume mode".format(), extra={"who": "resume"})
-            try:
-                with open("failed.pickle", "rb") as f:
-                    tasks = pickle.load(f)
-                os.remove("failed.pickle")
-            except Exception:
-                rootLogger.fatal("Failed at reading failed.pickle".format(), extra={"who": "resume"})
-                sys.exit(1)
+            # hoge
+            hash2task = {get_hash(v): v for v in tasks}
+            tasks_hash = [get_hash(t) for t in tasks]
+            tasks_mset = {h: tasks_hash.count(h) for h in hash2task.keys()}
+            dones = []
+            for i in pathlib.Path(".").glob("{0}*.pickle".format(name)):
+                with open(i, "rb") as f:
+                    dones.append(pickle.load(f)["task"])
+            dones_hash = [get_hash(t) for t in dones]
+            dones_mset = {h: dones_hash.count(h) for h in hash2task.keys()}
+            remaining_mset = {h: tasks_mset[h] - dones_mset[h] for h in hash2task.keys()}
+            tasks = []
+            for k, v in remaining_mset.items():
+                tasks += [copy.copy(hash2task[k]) for _ in range(v)]
+
             rootLogger.info("Loaded {0} tasks".format(len(tasks)), extra={"who": "resume"})
             sys.argv[1] = "manager"
-        else:
-            tasks = make_tasks()
         if sys.argv[1] == "manager":
             rootLogger.info("Starting manager mode", extra={"who": "manager"})
             servers = [x.strip() for x in hosts.split("\n") if x.strip() != ""]
@@ -309,18 +310,15 @@ if __name__ == "__main__":
 
             lock = threading.Lock()
             num_tasks = len(tasks)
-            saved = []
-            failed = []
             rootLogger.info("We have {0} tasks.".format(num_tasks), extra={"who": "manager"})
+            threads = []
             for server in servers:
-                threading.Thread(target=caller, args=(server, tasks, saved, failed, lock)).start()
+                t = threading.Thread(target=caller, args=(server, tasks, lock, len(tasks)))
+                t.start()
+                threads.append(t)
             while True:
-                if len(tasks) <= 0:
+                if all([(not t.is_alive()) for t in threads]):
                     handle_finish_tasks()
-                    rootLogger.info("Succeeded {0} tasks.".format(len(saved)), extra={"who": "manager"})
-                    rootLogger.info("Failed {0} tasks.".format(len(failed)), extra={"who": "manager"})
-                    with open("failed.pickle", "wb") as f:
-                        pickle.dump(failed, f)
                     break
         elif sys.argv[1] == "test":
             rootLogger.info("Starting test mode", extra={"who": "test"})
