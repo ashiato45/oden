@@ -9,6 +9,7 @@ import sys
 import logging
 import pathlib
 import copy
+import os
 
 
 def get_time_hash():
@@ -48,13 +49,16 @@ def calc(task):
     st = time.time()
     task.sort()
     t = time.time() - st
+    import random
+    if random.random() < 0.1:
+        raise Exception("Intended")
     return t
 
 
 def handle_finish_machine(uri, name):
     import json
     requests.post('https://hooks.slack.com/services/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', data=json.dumps({
-        'text': "Works of {1}@{0} are completed!",
+        'text': "Works of {1}@{0} are completed!".format(uri, name),
         'username': u'vagrant_test',
         'icon_emoji': u':ghost:',
         'link_names': 1,
@@ -211,6 +215,9 @@ def caller(server, tasks, saved, failed, lock):
                                 rootLogger.info("Saving the result as {0}".format(filename),
                                                 extra={"who": name_server})
                                 f.write(res2.content)
+                            lock.acquire()
+                            saved.append(filename)
+                            lock.release()
                             break
                         elif "error" in res:
                             rootLogger.info("Error occurred in the remote machine: {0}".format(res["error"]),
@@ -225,9 +232,6 @@ def caller(server, tasks, saved, failed, lock):
                         raise Exception("The remote machine is in idle.  The task was gone away...")
                     else:
                         raise Exception("Got unexpected error code {0}".format(res2.status_code))
-                lock.acquire()
-                saved.append(filename)
-                lock.release()
                 time_elapsed = time.time() - time_start
                 if len(saved) == 0:
                     eta = 0
@@ -241,6 +245,9 @@ def caller(server, tasks, saved, failed, lock):
                 rootLogger.info("Retrieving failed with {1}".format(res.status_code), extra={"who": name_server})
                 lock.release()
         except Exception as e:
+            lock.acquire()
+            failed.append(task)
+            lock.release()
             import traceback, io
             with io.StringIO() as f:
                 traceback.print_exc(file=f)
@@ -255,10 +262,16 @@ def caller(server, tasks, saved, failed, lock):
 if __name__ == "__main__":
     # Prepare logger
     global rootLogger
+
+    if len(sys.argv) < 2:
+        print("No modes specified")
+        sys.exit(1)
+
     if sys.argv[1] == "worker":
         logFormatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
     else:
         logFormatter = logging.Formatter("%(asctime)s [%(levelname)s] [%(who)s]  %(message)s")
+
     rootLogger = logging.getLogger()
     rootLogger.setLevel(logging.INFO)
 
@@ -271,47 +284,50 @@ if __name__ == "__main__":
     rootLogger.addHandler(consoleHandler)
 
     # Main
-    print(sys.argv[1])
-    if len(sys.argv) < 2:
-        rootLogger.fatal("No modes specified", extra={"who": "error"})
-    else:
-        if sys.argv[1] in ["manager", "test", "resume"]:
-            if sys.argv[1] == "resume":
-                rootLogger.info("Starting resume mode".format(), extra={"who": "resume"})
+    # print(sys.argv[1])
+
+    if sys.argv[1] in ["manager", "test", "resume"]:
+        if sys.argv[1] == "resume":
+            rootLogger.info("Starting resume mode".format(), extra={"who": "resume"})
+            try:
                 with open("failed.pickle", "rb") as f:
                     tasks = pickle.load(f)
-                rootLogger.info("Loaded {0} tasks".format(len(tasks)), extra={"who": "resume"})
-                sys.argv[1] = "manager"
-            else:
-                tasks = make_tasks()
-            if sys.argv[1] == "manager":
-                rootLogger.info("Starting manager mode", extra={"who": "manager"})
-                servers = [x.strip() for x in hosts.split("\n") if x.strip() != ""]
-                servers = ["http://{0}:8080/".format(x) for x in servers]
-                servers = [(server, name + str(i)) for i, server in enumerate(servers)]
-                rootLogger.info("Servers: " + str(servers), extra={"who": "manager"})
-
-                lock = threading.Lock()
-                num_tasks = len(tasks)
-                saved = []
-                failed = []
-                rootLogger.info("We have {0} tasks.".format(num_tasks), extra={"who": "manager"})
-                for server in servers:
-                    threading.Thread(target=caller, args=(server, tasks, saved, failed, lock)).start()
-                while True:
-                    if len(saved) + len(failed) == num_tasks:
-                        handle_finish_tasks()
-                        rootLogger.info("Succeeded {0} tasks.".format(len(saved)), extra={"who": "manager"})
-                        rootLogger.info("Failed {0} tasks.".format(len(failed)), extra={"who": "manager"})
-                        with open("failed.pickle", "wb") as f:
-                            pickle.dump(failed, f)
-                        break
-            elif sys.argv[1] == "test":
-                rootLogger.info("Starting test mode", extra={"who": "test"})
-                for i in tasks:
-                    rootLogger.info("Starting task {0}".format(i), extra={"who": "manager"})
-                    calc(i, "test")
-        elif sys.argv[1] == "worker":
-            app.run(host='0.0.0.0', port=8080)
+                os.remove("failed.pickle")
+            except Exception:
+                rootLogger.fatal("Failed at reading failed.pickle".format(), extra={"who": "resume"})
+                sys.exit(1)
+            rootLogger.info("Loaded {0} tasks".format(len(tasks)), extra={"who": "resume"})
+            sys.argv[1] = "manager"
         else:
-            rootLogger.fatal("Invalid argument {0}".format(sys.argv[1]), extra={"who": "error"})
+            tasks = make_tasks()
+        if sys.argv[1] == "manager":
+            rootLogger.info("Starting manager mode", extra={"who": "manager"})
+            servers = [x.strip() for x in hosts.split("\n") if x.strip() != ""]
+            servers = ["http://{0}:8080/".format(x) for x in servers]
+            servers = [(server, name + str(i)) for i, server in enumerate(servers)]
+            rootLogger.info("Servers: " + str(servers), extra={"who": "manager"})
+
+            lock = threading.Lock()
+            num_tasks = len(tasks)
+            saved = []
+            failed = []
+            rootLogger.info("We have {0} tasks.".format(num_tasks), extra={"who": "manager"})
+            for server in servers:
+                threading.Thread(target=caller, args=(server, tasks, saved, failed, lock)).start()
+            while True:
+                if len(tasks) <= 0:
+                    handle_finish_tasks()
+                    rootLogger.info("Succeeded {0} tasks.".format(len(saved)), extra={"who": "manager"})
+                    rootLogger.info("Failed {0} tasks.".format(len(failed)), extra={"who": "manager"})
+                    with open("failed.pickle", "wb") as f:
+                        pickle.dump(failed, f)
+                    break
+        elif sys.argv[1] == "test":
+            rootLogger.info("Starting test mode", extra={"who": "test"})
+            for i in tasks:
+                rootLogger.info("Starting task {0}".format(i), extra={"who": "manager"})
+                calc(i, "test")
+    elif sys.argv[1] == "worker":
+        app.run(host='0.0.0.0', port=8080)
+    else:
+        rootLogger.fatal("Invalid argument {0}".format(sys.argv[1]), extra={"who": "error"})
