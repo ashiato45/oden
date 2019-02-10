@@ -1,0 +1,38 @@
+---
+- hosts: all
+  remote_user: ubuntu
+  tasks:
+    - name: sync
+      synchronize:
+        src: .
+        dest: /home/ubuntu
+    - name: loadpyenv
+      git: 
+        repo: 'git://github.com/pyenv/pyenv.git'
+        dest: /home/ubuntu/.pyenv 
+        accept_hostkey: yes
+    - name: writepyenv
+      blockinfile:
+        dest: /home/ubuntu/.bash_profile
+        content: |
+          export PYENV_ROOT="$HOME/.pyenv"
+          export PATH="$PYENV_ROOT/bin:$PATH"
+          eval "$(pyenv init -)"
+        create: yes
+    - name: readprofile
+      shell: bash -lc 'source /home/ubuntu/.bash_profile'
+    - name: pyenvinstall
+      shell: bash -lc "pyenv install -s 3.5.0" # s skips if it exists
+    - name: pyenvset 
+      shell: bash -lc "pyenv global 3.5.0"
+    - set_fact: ansible_python_interpreter=/home/ubuntu/.pyenv/shims/python
+    - name: hoge
+      pip:
+        requirements: /home/ubuntu/oden/requirements.txt
+    - name: killpy
+      shell: killall python
+      ignore_errors: yes
+    - name: startpy
+      shell: python oden/oden.py worker > log.txt 2>&1 &
+      async: 15
+      poll: 0

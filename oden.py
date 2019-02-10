@@ -29,7 +29,7 @@ try:
     hosts = pathlib.Path("hosts.txt").read_text()
 except FileNotFoundError:
     hosts = ""
-name = "sample"
+name = "same"
 interval_polling = 5
 timeout = 30
 
