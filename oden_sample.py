@@ -57,7 +57,7 @@ def calc(task):
 
 def handle_finish_machine(uri, name):
     import json
-    requests.post('https://hooks.slack.com/services/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', data=json.dumps({
+    requests.post('https://hooks.slack.com/services/hogehoge/fugafuga/piyopiyo', data=json.dumps({
         'text': "Works of {1}@{0} are completed!".format(uri, name),
         'username': u'vagrant_test',
         'icon_emoji': u':ghost:',
@@ -67,7 +67,7 @@ def handle_finish_machine(uri, name):
 
 def handle_finish_tasks():
     import json
-    requests.post('https://hooks.slack.com/services/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', data=json.dumps({
+    requests.post('https://hooks.slack.com/services/hogehoge/fugafuga/piyopiyo', data=json.dumps({
         'text': "All works completed!",
         'username': u'vagrant_test',
         'icon_emoji': u':ghost:',
