@@ -5,7 +5,7 @@ Easy distributed computation (with no communication) just by one Python file
 ![abstract](img/abst.gif)
 
 ## Features
-- Easy to write tasks: All (picklable) Python objects can be used as tasks.  You don't have to learn new DSLs to write tasks.
+- Easy to write tasks: All (pickleable) Python objects can be used as tasks.  You don't have to learn new DSLs to write tasks.
 - Easy to setup (?): Add oden.py in your project, fill in the placeholder in oden.py, copy the project in remote machines, and run oden.py in worker mode.
 - Easy network setting: Opening 8080 of remote machines (only) to your PC is enough.  No need of tunneling or something.
 - Easy to analyze the results: The results are saved in pickle files.  No need to write serializers nor parsers of the results.
@@ -26,8 +26,8 @@ Easy distributed computation (with no communication) just by one Python file
     2. `name` is the name of your project of distributed computation.  The results are saved with the names of `(name)(number)_(date).pickle`.
     3. `interval_polling` is the interval of polling to retrive the results from the remote machines.  The unit is second.
     4. `timeout` is the timeout in the HTTP request to communicate remote machines.  The unit is second.
-    5. `make_tasks()` has to return a list of tasks.  Any (picklable) Python objects can be used as tasks.
-    6. `calc(task)` takes a task and returns the result.  It can return any (picklable) Python objects.  This function is called in the remote machines.
+    5. `make_tasks()` has to return a list of tasks.  Any (pickleable) Python objects can be used as tasks.
+    6. `calc(task)` takes a task and returns the result.  It can return any (pickleable) Python objects.  This function is called in the remote machines.
     7. (optional) `handle_finish_machine(uri, name)` is called when a remote machine has no remaining task because of running out of the tasks.
     8. (optional) `handle_finish_tasks()` is called when all the tasks are processed.
     9. (optional) `show_status()` returns a string.  The return value is shown when you access the remote machine by `http://(hostname):8080`.
