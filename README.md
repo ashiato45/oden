@@ -11,7 +11,7 @@ Easy distributed computation (with no communication) just by one Python file
 - Easy to analyze the results: The results are saved in pickle files.  No need to write serializers nor parsers of the results.
 - Easy to debug: The exceptions in the remote machines are sent to your PC and the task is skipped.
 - Scheduling is supported: Even if the number of your tasks is larger than the number of remote machines, the tasks are automatically distributed.
-- Resuming is supported: If some tasks failed because of exceptions or other errors, you can restart the failed tasks by skipping the succeeded tasks.
+- Resuming is supported: If some tasks fail because of exceptions or other errors, you can restart the failed tasks by skipping the succeeded tasks.
 
 ## Requirements
 - Python3
