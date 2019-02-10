@@ -24,7 +24,7 @@ Easy distributed computation (with no communication) just by one Python file
 2. Fill in the place holder between `------ User write below ------` and `------ User write above ------`.
     1. `hosts` is a string of the hostnames of remote machines separated by breaks.  In the default setting, it reads the hosts from `hosts.txt`.
     2. `name` is the name of your project of distributed computation.  The results are saved with the names of `(name)(number)_(date).pickle`.
-    3. `interval_polling` is the interval of polling to retrive the results from the remote machines.  The unit is second.
+    3. `interval_polling` is the interval of polling to retrieve the results from the remote machines.  The unit is second.
     4. `timeout` is the timeout in the HTTP request to communicate remote machines.  The unit is second.
     5. `make_tasks()` has to return a list of tasks.  Any (pickleable) Python objects can be used as tasks.
     6. `calc(task)` takes a task and returns the result.  It can return any (pickleable) Python objects.  This function is called in the remote machines.
