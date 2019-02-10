@@ -52,7 +52,7 @@ Alice wants to know the performance of `sort` built in Python and planned a expe
 Here, the environment variables `AWS_ACCESSKEY_ID` and `AWS_SECRET_ACCESS_KEY` are properly set.
 Typing `vagrant up --provider=aws` would start 3 AWS machines.
 4. Make the list of the AWS machines `hosts.txt` by `vagrant ssh-config | grep HostName | awk '{print $2}' > hosts.txt`
-5. Copy file, set up appropriate environments and start `python oden.py worker` by [ansible](https://www.ansible.com/) and an ansible playbook `test.yml`: (TODO; puthere)  Typing `ansible-playbook -i hosts.txt test.yml -u ubuntu --private-key=alice.pem` does these works.
+5. Copy file, set up appropriate environments and start `python oden.py worker` so that its log is forwarded to `log.txt` by [ansible](https://www.ansible.com/) and an ansible playbook `test.yml`: (TODO; puthere)  Typing `ansible-playbook -i hosts.txt test.yml -u ubuntu --private-key=alice.pem` does these works.
 6. Run `python oden.py manager` and wait for the end.
 7. Some tasks are properly processed but some failed because of the bug in 2.  Alice noticed the cause and modified `make_tasks()` on Alice's PC.
 8. Run `ansible-playbook -i hosts.txt test.yml -u ubuntu --private-key=alice.pem` again.  This operation copies the updated files from Alice's PC to the AWS machines, halts oden in the AWS machines and starts oden again (the installations are skipped).
