@@ -22,64 +22,47 @@ state_worker = ("idle",)
 
 
 # ------ User write below ------
+# Hostnames are written separated by breaks.
 # hosts = """
 # 999.999.999.999
+# 999.999.999.998
+# 999.999.999.997
 # """
+# The following try-except block reads hostnames from hosts.txt.
+# If you wrote the hostnames above, please disable the block.
 try:
     hosts = pathlib.Path("hosts.txt").read_text()
 except FileNotFoundError:
     hosts = ""
-name = "same"
+    
+name = "sample"
 interval_polling = 5
 timeout = 30
 
-
+# Returns the list of the tasks
 def make_tasks():
-    import random
-    random.seed(42)
     tasks = []
-    for i in range(1, 10 + 1):
-        for _ in range(10):
-            tasks.append([random.random() for _ in range(i*10000)])
     return tasks
 
 
+# Takes a task and return the result
 def calc(task):
-    import time
-    st = time.time()
-    task.sort()
-    t = time.time() - st
-    import random
-    if random.random() < 0.1:
-        raise Exception("Intended")
-    return t
+    return "the result for (task) here"
 
 
+# Called when no tasks are assgined to a worker
 def handle_finish_machine(uri, name):
-    import json
-    requests.post('https://hooks.slack.com/services/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', data=json.dumps({
-        'text': "Works of {1}@{0} are completed!".format(uri, name),
-        'username': u'vagrant_test',
-        'icon_emoji': u':ghost:',
-        'link_names': 1,
-    }))
+    pass
 
 
+# Called when all the tasks are processed
 def handle_finish_tasks():
-    import json
-    requests.post('https://hooks.slack.com/services/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', data=json.dumps({
-        'text': "All works completed!",
-        'username': u'vagrant_test',
-        'icon_emoji': u':ghost:',
-        'link_names': 1,
-    }))
+    pass
 
 
+# Returns a string that is shown when 'http://(hostname):8080/' is accessed
 def show_status():
-    try:
-        return state_worker[0] + "\n" + pathlib.Path("log.txt").read_text()
-    except Exception:
-        return "I'm working well!"
+    return "I'm working well!"
 
 
 # ------ User write above ------

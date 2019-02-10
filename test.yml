@@ -26,9 +26,11 @@
     - name: pyenvset 
       shell: bash -lc "pyenv global 3.5.0"
     - set_fact: ansible_python_interpreter=/home/ubuntu/.pyenv/shims/python
-    - name: hoge
+    - name: install_requirements
       pip:
-        requirements: /home/ubuntu/oden/requirements.txt
+        name:
+          - flask
+          - requests
     - name: killpy
       shell: killall python
       ignore_errors: yes
