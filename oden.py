@@ -34,6 +34,7 @@ try:
     hosts = pathlib.Path("hosts.txt").read_text()
 except FileNotFoundError:
     hosts = ""
+ports = [8080, ]
     
 name = "sample"
 interval_polling = 5
@@ -249,7 +250,7 @@ if __name__ == "__main__":
     else:
         logFormatter = logging.Formatter("%(asctime)s [%(levelname)s] [%(who)s]  %(message)s")
 
-    rootLogger = logging.getLogger()
+    rootLogger = logging.getLogger("oden")
     rootLogger.setLevel(logging.INFO)
 
     fileHandler = logging.FileHandler("{0}.log".format(get_time_hash()))
@@ -287,7 +288,7 @@ if __name__ == "__main__":
         if sys.argv[1] == "manager":
             rootLogger.info("Starting manager mode", extra={"who": "manager"})
             servers = [x.strip() for x in hosts.split("\n") if x.strip() != ""]
-            servers = ["http://{0}:8080/".format(x) for x in servers]
+            servers = ["http://{0}:{1}/".format(x, y) for x in servers for y in ports]
             servers = [(server, name + str(i)) for i, server in enumerate(servers)]
             rootLogger.info("Servers: " + str(servers), extra={"who": "manager"})
 
@@ -305,10 +306,14 @@ if __name__ == "__main__":
                     break
         elif sys.argv[1] == "test":
             rootLogger.info("Starting test mode", extra={"who": "test"})
-            for i in tasks:
+            for i in make_tasks():
                 rootLogger.info("Starting task {0}".format(i), extra={"who": "manager"})
-                calc(i, "test")
+                calc(i)
     elif sys.argv[1] == "worker":
-        app.run(host='0.0.0.0', port=8080)
+        if len(sys.argv) > 2:
+            port = int(sys.argv[2])
+        else:
+            port = 8080
+        app.run(host='0.0.0.0', port=port)
     else:
         rootLogger.fatal("Invalid argument {0}".format(sys.argv[1]), extra={"who": "error"})
