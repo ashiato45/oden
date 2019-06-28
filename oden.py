@@ -34,7 +34,6 @@ try:
     hosts = pathlib.Path("hosts.txt").read_text()
 except FileNotFoundError:
     hosts = ""
-ports = [8080, ]
     
 name = "sample"
 interval_polling = 5
@@ -172,7 +171,13 @@ def respond_retrieve():
     abort(500, {}) # Internal server error
 
 
-def caller(server, tasks, lock, total):
+@app.route("/status", methods=["GET"])
+def respond_status():
+    global state_worker
+    return state_worker[0]
+
+
+def caller(server, tasks, finisheds, lock, total):
     time_start = time.time()
     uri_server = server[0]
     name_server = server[1]
@@ -180,12 +185,14 @@ def caller(server, tasks, lock, total):
     while True:
         lock.acquire()
         if tasks == []:
+            lock.release()
             break
         task = tasks.pop()
         rootLogger.info("Popped".format(), extra={"who": name_server})
         lock.release()
         try:
-            filename = "{0}_{1}.pickle".format(name_server, get_time_hash())
+            filename = "{0}_{1}.done.pickle".format(name_server, get_time_hash())
+            filename_error = "{0}_{1}.error.pickle".format(name_server, get_time_hash())
             data = pickle.dumps(task)
             res = requests.post(uri_server + "calc", data=data, timeout=timeout)
             if res.status_code == 200:
@@ -204,12 +211,15 @@ def caller(server, tasks, lock, total):
                                 f.write(res2.content)
                             break
                         elif "error" in res:
-                            rootLogger.info("Error occurred in the remote machine: {0}".format(res["error"]),
+                            rootLogger.info("Internal error occurred in the remote machine on the task: {0}".format(res["error"]),
                                             extra={"who": name_server})
-                            raise Exception("Error occurred in the remote machine")
+                            with open(filename_error, "wb") as f:
+                                rootLogger.info("Saving the error result as {0}".format(filename_error),
+                                                extra={"who": name_server})
+                                f.write(res2.content)
+                            break
                         else:
                             raise Exception("Invalid result is given")
-
                     elif res2.status_code == 503:
                         pass  # the remote is working
                     elif res2.status_code == 404:
@@ -217,11 +227,12 @@ def caller(server, tasks, lock, total):
                     else:
                         raise Exception("Got unexpected error code {0}".format(res2.status_code))
                 time_elapsed = time.time() - time_start
-                if total - len(tasks) == 0:
-                    eta = 0
-                else:
-                    eta = time_elapsed * len(tasks) / (total - len(tasks))
-                rootLogger.info("{0} tasks are remaining.  ETA is {1}".format(len(tasks), eta),
+                lock.acquire()
+                finisheds.append(task)
+                lock.release()
+                speed = time_elapsed / len(finisheds)
+                eta = speed*(total - len(finisheds))
+                rootLogger.info("Finished {0}/{1} tasks ({2} in the queue).  ETA is {3}".format(len(finisheds), total, len(tasks), eta),
                                 extra={"who": name_server})
             else:
                 rootLogger.info("Retrieving failed with {1}".format(res.status_code), extra={"who": name_server})
@@ -231,15 +242,38 @@ def caller(server, tasks, lock, total):
                 traceback.print_exc(file=f)
                 rootLogger.error("Request failed with the following error: {0}".format(f.getvalue()),
                                  extra={"who": name_server})
+            # put the failed task back to the queue
+            rootLogger.info("Putting back the failed task to the queue", extra={"who": name_server})
+            lock.acquire()
+            tasks.append(task)
+            lock.release()
+            break
 
-    lock.release()
     rootLogger.info("Closing".format(), extra={"who": name_server})
     handle_finish_machine(uri_server, name_server)
 
 
+def get_servers():
+    servers = [x.strip() for x in hosts.split("\n") if x.strip() != ""]
+    servers = ["http://{0}/".format(x) for x in servers]
+    servers = [(server, name + str(i)) for i, server in enumerate(servers)]
+    return servers
+
+def get_status_remotes():
+    xs = []
+    servers = get_servers()
+    for server in servers:
+        try:
+            res = requests.get(server[0] + "status")
+            xs.append((server[0], res.content.decode()))
+        except:
+            xs.append((server[0], "error"))
+    return xs
+
 if __name__ == "__main__":
     # Prepare logger
     global rootLogger
+    global logFile
 
     if len(sys.argv) < 2:
         print("No modes specified")
@@ -253,7 +287,8 @@ if __name__ == "__main__":
     rootLogger = logging.getLogger("oden")
     rootLogger.setLevel(logging.INFO)
 
-    fileHandler = logging.FileHandler("{0}.log".format(get_time_hash()))
+    logFile = "{0}.log".format(get_time_hash())
+    fileHandler = logging.FileHandler(logFile)
     fileHandler.setFormatter(logFormatter)
     rootLogger.addHandler(fileHandler)
 
@@ -266,14 +301,16 @@ if __name__ == "__main__":
 
     if sys.argv[1] in ["manager", "test", "resume"]:
         tasks = make_tasks()
+        resume = False
         if sys.argv[1] == "resume":
+            resume = True
             rootLogger.info("Starting resume mode".format(), extra={"who": "resume"})
             # hoge
             hash2task = {get_hash(v): v for v in tasks}
             tasks_hash = [get_hash(t) for t in tasks]
             tasks_mset = {h: tasks_hash.count(h) for h in hash2task.keys()}
             dones = []
-            for i in pathlib.Path(".").glob("{0}*.pickle".format(name)):
+            for i in pathlib.Path(".").glob("{0}*.done.pickle".format(name)):
                 with open(i, "rb") as f:
                     dones.append(pickle.load(f)["task"])
             dones_hash = [get_hash(t) for t in dones]
@@ -287,17 +324,32 @@ if __name__ == "__main__":
             sys.argv[1] = "manager"
         if sys.argv[1] == "manager":
             rootLogger.info("Starting manager mode", extra={"who": "manager"})
-            servers = [x.strip() for x in hosts.split("\n") if x.strip() != ""]
-            servers = ["http://{0}:{1}/".format(x, y) for x in servers for y in ports]
-            servers = [(server, name + str(i)) for i, server in enumerate(servers)]
+            # check if the remotes are ready
+            for i in get_status_remotes():
+                if i[1] != "idle":
+                    rootLogger.error("Machine {0} is not in idle ({1}).  Cannot start the calculation.".format(i[0], i[1]))
+                    sys.exit(1)
+            #check if the previous calculation remaining
+            if any(pathlib.Path(".").glob("{0}*.pickle".format(name))) and (not resume):
+                ans = ""
+                while True:    
+                    ans = input("The previous calculations seems remaining.  Do you really start the calculation? (y/n)")
+                    if ans.lower().startswith("y"):
+                        break
+                    elif ans.lower().startswith("n"):
+                        sys.exit(1)
+
+            #
+            servers = get_servers()
             rootLogger.info("Servers: " + str(servers), extra={"who": "manager"})
 
             lock = threading.Lock()
             num_tasks = len(tasks)
+            finisheds = []
             rootLogger.info("We have {0} tasks.".format(num_tasks), extra={"who": "manager"})
             threads = []
             for server in servers:
-                t = threading.Thread(target=caller, args=(server, tasks, lock, len(tasks)))
+                t = threading.Thread(target=caller, args=(server, tasks, finisheds, lock, num_tasks))
                 t.start()
                 threads.append(t)
             while True:
@@ -315,5 +367,8 @@ if __name__ == "__main__":
         else:
             port = 8080
         app.run(host='0.0.0.0', port=port)
+    elif sys.argv[1] == "status":
+        for i in get_status_remotes():
+            print("{0}\t{1}".format(i[0], i[1]))
     else:
         rootLogger.fatal("Invalid argument {0}".format(sys.argv[1]), extra={"who": "error"})
